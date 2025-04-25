@@ -1,0 +1,93 @@
+from flask import Flask, jsonify, request
+from functools import wraps
+import jwt
+import datetime
+
+app = Flask(__name__)
+
+# Secret key for JWT - change this in production!
+JWT_SECRET = "your_very_secret_key_here"
+
+# Example users
+users = {
+    "admin": "password123",  # In production, use hashed passwords!
+    "user": "smarthat2023"
+}
+
+# Auth middleware to protect routes
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split(" ")[1]
+        
+        if not token:
+            return jsonify({'message': 'Token is missing!'}), 401
+            
+        try:
+            data = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            current_user = data['username']
+        except:
+            return jsonify({'message': 'Token is invalid!'}), 401
+            
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    auth = request.json
+    if not auth or not auth.get('username') or not auth.get('password'):
+        return jsonify({'message': 'Could not verify'}), 401
+    
+    if auth['username'] in users and auth['password'] == users[auth['username']]:
+        token = jwt.encode({
+            'username': auth['username'],
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, JWT_SECRET)
+        
+        return jsonify({'token': token})
+        
+    return jsonify({'message': 'Invalid credentials'}), 401
+
+@app.route('/api/verify', methods=['GET'])
+def verify():
+    token = None
+    if 'Authorization' in request.headers:
+        token = request.headers['Authorization'].split(" ")[1]
+    
+    if not token:
+        return jsonify({'message': 'Token is missing!'}), 401
+        
+    try:
+        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return jsonify({'message': 'Token is valid'})
+    except:
+        return jsonify({'message': 'Token is invalid!'}), 401
+
+@app.route('/status')
+@token_required
+def status(current_user):
+    # Simulated device status data
+    return jsonify({
+        'detection_active': True,
+        'mode': 'Automatic',
+        'battery': 80,
+        'health': 'Good',
+        'quiet_mode_enabled': False
+    })
+
+@app.route('/stop', methods=['POST'])
+@token_required
+def stop_detection(current_user):
+    # Simulate stopping the detection
+    return jsonify({'message': 'Detection stopped successfully'})
+
+@app.route('/voice_alert_toggle', methods=['POST'])
+@token_required
+def toggle_voice_alert(current_user):
+    # Simulate toggling the voice alerts
+    return jsonify({'message': 'Voice alert toggled successfully'})
+
+if __name__ == '__main__':
+    app.run(debug=True)
